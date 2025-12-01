@@ -42,7 +42,7 @@ def list_slots(pkcs11lib):
     """Liste tous les slots disponibles."""
     print("\n=== Slots Disponibles ===")
     
-    slots = pkcs11lib.getSlotList(tokenPresent=False)
+    slots = pkcs11lib.getSlotList(tokenPresent=True)
     print(f"Nombre total de slots: {len(slots)}")
     
     for slot_id in slots:

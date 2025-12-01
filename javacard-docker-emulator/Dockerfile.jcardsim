@@ -1,7 +1,7 @@
 # =============================================================================
 # Dockerfile.jcardsim - Émulateur JavaCard avec jCardSim
 # =============================================================================
-FROM eclipse-temurin:11-jdk-jammy AS builder
+FROM public.ecr.aws/docker/library/eclipse-temurin:11 AS builder
 
 # Installation des dépendances de build
 RUN apt-get update && apt-get install -y --no-install-recommends \

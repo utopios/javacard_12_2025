@@ -1,7 +1,7 @@
 # =============================================================================
 # Dockerfile.pcsc-bridge - Bridge PC/SC virtuel vers jCardSim avec VPCD
 # =============================================================================
-FROM debian:bookworm-slim
+FROM public.ecr.aws/debian/debian:bookworm-slim
 
 LABEL maintainer="JavaCard Emulator"
 LABEL description="Virtual PC/SC reader bridge for jCardSim using vpcd"

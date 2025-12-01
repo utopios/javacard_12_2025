@@ -1,7 +1,7 @@
 # =============================================================================
 # Dockerfile.client - Client de test et développement JavaCard
 # =============================================================================
-FROM eclipse-temurin:11-jdk-jammy
+FROM public.ecr.aws/docker/library/eclipse-temurin:11
 
 LABEL maintainer="JavaCard Emulator"
 LABEL description="JavaCard development and testing client"
