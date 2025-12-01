@@ -1,0 +1,75 @@
+# =============================================================================
+# Dockerfile.jcardsim - Émulateur JavaCard avec jCardSim
+# =============================================================================
+FROM eclipse-temurin:11-jdk-jammy AS builder
+
+# Installation des dépendances de build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    wget \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Cloner le SDK JavaCard depuis le repo de martinpaljak (source fiable)
+RUN git clone --depth 1 https://github.com/martinpaljak/oracle_javacard_sdks.git /build/jc-sdks
+
+# Télécharger jCardSim 3.0.4 depuis Maven Central (version com.klinec compatible JC 3.0.4)
+# La branche master de licel/jcardsim nécessite JC 3.1+ qui n'est pas disponible publiquement
+RUN mkdir -p /build/jcardsim && \
+    wget -q -O /build/jcardsim/jcardsim.jar \
+    "https://repo1.maven.org/maven2/com/klinec/jcardsim/3.0.4/jcardsim-3.0.4.jar"
+
+# =============================================================================
+# Image finale optimisée
+# =============================================================================
+# IMPORTANT: Utiliser JDK (pas JRE) car jpype nécessite les headers JNI
+FROM eclipse-temurin:11-jdk-jammy
+
+LABEL maintainer="JavaCard Emulator"
+LABEL description="jCardSim JavaCard Simulator with socket server"
+
+# Installation des utilitaires et jpype1 pour exécuter les applets Java
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    netcat-openbsd \
+    curl \
+    python3 \
+    python3-pip \
+    && pip3 install --no-cache-dir jpype1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Créer l'utilisateur non-root
+RUN useradd -m -s /bin/bash jcardsim
+
+WORKDIR /app
+
+# Copier les artefacts depuis le builder
+COPY --from=builder /build/jcardsim/jcardsim.jar /app/lib/jcardsim.jar
+COPY --from=builder /build/jc-sdks/jc304_kit/lib/*.jar /app/lib/
+
+# Créer les répertoires nécessaires
+RUN mkdir -p /app/applets /app/config /app/data /app/logs && \
+    chown -R jcardsim:jcardsim /app
+
+# Copier le script de démarrage et le serveur Python
+COPY --chown=jcardsim:jcardsim scripts/start-jcardsim.sh /app/
+COPY --chown=jcardsim:jcardsim scripts/jcardsim-socket-server.py /app/
+
+RUN chmod +x /app/start-jcardsim.sh
+
+USER jcardsim
+
+# Variables d'environnement
+ENV JCARDSIM_PORT=9025
+ENV JAVA_OPTS="-Xmx256m"
+
+# Port exposé
+EXPOSE 9025
+
+# Healthcheck
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD nc -z localhost ${JCARDSIM_PORT} || exit 1
+
+# Point d'entrée
+ENTRYPOINT ["/app/start-jcardsim.sh"]

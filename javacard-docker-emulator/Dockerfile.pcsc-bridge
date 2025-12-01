@@ -1,0 +1,74 @@
+# =============================================================================
+# Dockerfile.pcsc-bridge - Bridge PC/SC virtuel vers jCardSim avec VPCD
+# =============================================================================
+FROM debian:bookworm-slim
+
+LABEL maintainer="JavaCard Emulator"
+LABEL description="Virtual PC/SC reader bridge for jCardSim using vpcd"
+
+# Installation de PC/SC, outils et dépendances pour compiler vpcd
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pcscd \
+    pcsc-tools \
+    libpcsclite-dev \
+    libpcsclite1 \
+    netcat-openbsd \
+    python3 \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    autoconf \
+    automake \
+    libtool \
+    pkg-config \
+    help2man \
+    git \
+    swig \
+    psmisc \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Cloner et compiler vsmartcard (vpcd - Virtual PCD)
+RUN git clone --depth 1 https://github.com/frankmorgner/vsmartcard.git && \
+    cd vsmartcard/virtualsmartcard && \
+    autoreconf -vis && \
+    ./configure --sysconfdir=/etc --prefix=/usr && \
+    make && \
+    make install && \
+    ldconfig && \
+    cd src/vpicc && make install PYTHON=/usr/bin/python3 pythondir=/usr/lib/python3/dist-packages
+
+# Installer pyscard
+RUN pip3 install --break-system-packages pyscard || true
+
+WORKDIR /app
+
+# Créer les répertoires nécessaires
+RUN mkdir -p /run/pcscd /etc/reader.conf.d /app/scripts
+
+# Nettoyer les configs par défaut de vpcd pour éviter les conflits
+RUN rm -f /etc/reader.conf.d/vpcd* 2>/dev/null || true
+
+# Copier les scripts
+COPY scripts/pcsc-bridge.py /app/scripts/
+COPY scripts/start-pcsc-bridge.sh /app/
+COPY scripts/vpcd-proxy.py /app/scripts/
+COPY scripts/vicc-jcardsim.py /app/scripts/
+COPY scripts/vpcd-jcardsim-proxy.py /app/scripts/
+
+RUN chmod +x /app/start-pcsc-bridge.sh /app/scripts/*.py
+
+# Variables d'environnement
+ENV JCARDSIM_HOST=jcardsim
+ENV JCARDSIM_PORT=9025
+ENV VPCD_HOST=localhost
+ENV VPCD_PORT=35963
+ENV READER_NAME="Virtual JavaCard Reader"
+
+# Exposer le port vpcd pour les connexions
+EXPOSE 35963
+
+# Point d'entrée
+CMD ["/app/start-pcsc-bridge.sh"]

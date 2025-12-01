@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # jCardSim Simulator - Émulateur JavaCard avec serveur socket
+  # =============================================================================
+  jcardsim:
+    build:
+      context: .
+      dockerfile: Dockerfile.jcardsim
+    container_name: jcardsim-server
+    ports:
+      - "9025:9025"  # Port pour communication APDU via socket
+    volumes:
+      - ./applets:/app/applets:ro          # Vos applets JavaCard
+      - ./config/jcardsim.cfg:/app/config/jcardsim.cfg:ro
+      - jcardsim-data:/app/data            # Données persistantes (EEPROM simulée)
+    environment:
+      - JCARDSIM_PORT=9025
+      - JAVA_OPTS=-Xmx256m
+    networks:
+      - javacard-net
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9025"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # =============================================================================
+  # Virtual PC/SC Bridge - Expose le simulateur comme un lecteur PC/SC virtuel
+  # =============================================================================
+  pcsc-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.pcsc-bridge
+    container_name: pcsc-virtual-reader
+    depends_on:
+      jcardsim:
+        condition: service_healthy
+    volumes:
+      - pcsc-socket:/run/pcscd            # Socket PC/SC partagé (utilise /run au lieu de /var/run)
+    environment:
+      - JCARDSIM_HOST=jcardsim
+      - JCARDSIM_PORT=9025
+      - VPCD_PORT=35963
+      - READER_NAME=Virtual JavaCard Reader
+    networks:
+      - javacard-net
+    privileged: true  # Nécessaire pour accès aux périphériques USB virtuels
+    restart: unless-stopped
+
+  # =============================================================================
+  # OpenSC Middleware - Couche PKCS#11 et outils de gestion
+  # =============================================================================
+  opensc-middleware:
+    build:
+      context: .
+      dockerfile: Dockerfile.opensc
+    container_name: opensc-pkcs11
+    depends_on:
+      - pcsc-bridge
+    volumes:
+      - pcsc-socket:/run/pcscd            # Socket PC/SC partagé avec pcsc-bridge
+      - ./config/opensc.conf:/etc/opensc/opensc.conf:ro
+      - ./scripts:/app/scripts:ro
+      - shared-data:/app/shared           # Données partagées (certificats, clés)
+    environment:
+      - OPENSC_DEBUG=3
+      - PCSCLITE_CSOCK_NAME=/run/pcscd/pcscd.comm
+    networks:
+      - javacard-net
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  # =============================================================================
+  # Client de test - Environnement de développement et tests APDU
+  # =============================================================================
+  test-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: javacard-test-client
+    depends_on:
+      - opensc-middleware
+    volumes:
+      - pcsc-socket:/run/pcscd            # Socket PC/SC partagé
+      - ./applets:/app/applets
+      - ./scripts:/app/scripts
+      - shared-data:/app/shared
+      - ./tests:/app/tests
+    environment:
+      - JCARDSIM_HOST=jcardsim
+      - JCARDSIM_PORT=9025
+      - PCSCLITE_CSOCK_NAME=/run/pcscd/pcscd.comm
+    networks:
+      - javacard-net
+    stdin_open: true
+    tty: true
+    command: tail -f /dev/null  # Garde le conteneur actif
+
+# =============================================================================
+# Réseaux
+# =============================================================================
+networks:
+  javacard-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/16
+
+# =============================================================================
+# Volumes persistants
+# =============================================================================
+volumes:
+  jcardsim-data:
+    driver: local
+  pcsc-socket:
+    driver: local
+  shared-data:
+    driver: local
