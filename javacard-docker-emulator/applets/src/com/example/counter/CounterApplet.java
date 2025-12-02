@@ -95,6 +95,7 @@ public class CounterApplet extends Applet {
         if (selectingApplet()) {
             return;
         }
+        
 
         // Vérifier CLA
         if (buffer[ISO7816.OFFSET_CLA] != CLA_COUNTER) {
@@ -103,6 +104,9 @@ public class CounterApplet extends Applet {
 
         // Dispatcher
         switch (buffer[ISO7816.OFFSET_INS]) {
+            // case (byte) 0xA4:
+                
+            //     break;
             case INS_GET_COUNTER:
                 processGetCounter(apdu);
                 break;
